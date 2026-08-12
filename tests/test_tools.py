@@ -155,6 +155,12 @@ async def test_14_delete_item(server, recorder):
     assert recorder.url.path == "/api/config/conf.yml/sections/0/items/0"
 
 
+async def test_slash_in_item_name_is_percent_encoded(server, recorder):
+    await call(server, "dashy_delete_item", sid="Media & Automation", iid="Bookshelf / Readarr")
+    assert recorder.method == "DELETE"
+    assert recorder.url.raw_path == b"/api/config/conf.yml/sections/Media%20%26%20Automation/items/Bookshelf%20%2F%20Readarr"
+
+
 # --- filename override -------------------------------------------------------
 
 async def test_filename_override_used_instead_of_default(server, recorder):

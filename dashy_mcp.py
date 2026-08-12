@@ -52,7 +52,11 @@ async def _req(method: str, path: str, json: Any = None) -> JSONVal:
 
 
 def _f(filename: str) -> str:
-    return quote(filename or CONFIG_FILE)
+    return quote(filename or CONFIG_FILE, safe="")
+
+
+def _q(value: str) -> str:
+    return quote(value, safe="")
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
@@ -77,14 +81,14 @@ async def dashy_replace_config(config: dict, filename: str = "") -> JSONObj:
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def dashy_get_key(key: str, filename: str = "") -> JSONVal:
     """Get one top-level config key: pageInfo, appConfig, sections, or pages."""
-    return await _req("GET", f"/config/{_f(filename)}/{quote(key)}")
+    return await _req("GET", f"/config/{_f(filename)}/{_q(key)}")
 
 
 @mcp.tool(annotations=DESTRUCTIVE)
 async def dashy_set_key(key: str, value: Any, filename: str = "") -> JSONObj:
     """Replace one top-level config key (pageInfo, appConfig, sections, or pages)
     with `value`. This is a complete replacement of that key, not a merge."""
-    return await _req("PUT", f"/config/{_f(filename)}/{quote(key)}", value)
+    return await _req("PUT", f"/config/{_f(filename)}/{_q(key)}", value)
 
 
 @mcp.tool
@@ -97,52 +101,52 @@ async def dashy_add_section(section: dict, filename: str = "") -> JSONObj:
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def dashy_get_section(sid: str, filename: str = "") -> JSONObj:
     """Get one section by zero-based index or exact section name."""
-    return await _req("GET", f"/config/{_f(filename)}/sections/{quote(sid)}")
+    return await _req("GET", f"/config/{_f(filename)}/sections/{_q(sid)}")
 
 
 @mcp.tool
 async def dashy_update_section(sid: str, patch: dict, filename: str = "") -> JSONObj:
     """Shallow-merge `patch` into a section (by index or exact name). Only the
     given fields change; a nested array in `patch` replaces the existing one wholesale."""
-    return await _req("PATCH", f"/config/{_f(filename)}/sections/{quote(sid)}", patch)
+    return await _req("PATCH", f"/config/{_f(filename)}/sections/{_q(sid)}", patch)
 
 
 @mcp.tool(annotations=DESTRUCTIVE)
 async def dashy_delete_section(sid: str, filename: str = "") -> JSONObj:
     """Delete a section (by index or exact name), including all its items."""
-    return await _req("DELETE", f"/config/{_f(filename)}/sections/{quote(sid)}")
+    return await _req("DELETE", f"/config/{_f(filename)}/sections/{_q(sid)}")
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def dashy_list_items(sid: str, filename: str = "") -> list[Any]:
     """List the items (tiles) in a section, by section index or exact name."""
-    return await _req("GET", f"/config/{_f(filename)}/sections/{quote(sid)}/items")
+    return await _req("GET", f"/config/{_f(filename)}/sections/{_q(sid)}/items")
 
 
 @mcp.tool
 async def dashy_add_item(sid: str, item: dict, filename: str = "") -> JSONObj:
     """Add a new item (tile) to a section (by index or exact name). `item` requires
     a `title`; common keys: title, url, icon, description, target."""
-    return await _req("POST", f"/config/{_f(filename)}/sections/{quote(sid)}/items", item)
+    return await _req("POST", f"/config/{_f(filename)}/sections/{_q(sid)}/items", item)
 
 
 @mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def dashy_get_item(sid: str, iid: str, filename: str = "") -> JSONObj:
     """Get one item (tile) by index or exact title, within a section by index or exact name."""
-    return await _req("GET", f"/config/{_f(filename)}/sections/{quote(sid)}/items/{quote(iid)}")
+    return await _req("GET", f"/config/{_f(filename)}/sections/{_q(sid)}/items/{_q(iid)}")
 
 
 @mcp.tool
 async def dashy_update_item(sid: str, iid: str, patch: dict, filename: str = "") -> JSONObj:
     """Shallow-merge `patch` into an item (by index or exact title), within a section
     (by index or exact name). Only the given fields change."""
-    return await _req("PATCH", f"/config/{_f(filename)}/sections/{quote(sid)}/items/{quote(iid)}", patch)
+    return await _req("PATCH", f"/config/{_f(filename)}/sections/{_q(sid)}/items/{_q(iid)}", patch)
 
 
 @mcp.tool(annotations=DESTRUCTIVE)
 async def dashy_delete_item(sid: str, iid: str, filename: str = "") -> JSONObj:
     """Delete an item (tile) by index or exact title, within a section by index or exact name."""
-    return await _req("DELETE", f"/config/{_f(filename)}/sections/{quote(sid)}/items/{quote(iid)}")
+    return await _req("DELETE", f"/config/{_f(filename)}/sections/{_q(sid)}/items/{_q(iid)}")
 
 
 def main() -> None:
