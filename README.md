@@ -55,9 +55,23 @@ claude mcp add dashy \
 
 ## Tools
 
-One tool per Dashy API endpoint:
+**4 resource-scoped tools**, each covering multiple Dashy API endpoints (14
+total) via an `operation` parameter. Call a tool with `operation` set to one
+of its listed operations and an `arguments` dict matching that operation's
+parameters — the tool's own description (visible to your MCP client) lists
+every operation, its signature, and a one-line doc.
 
-| Tool | Endpoint |
+| Tool | Operations | Covers |
+|---|---|---|
+| `dashy_item` | 5 | List/add/get/update/delete items (tiles) |
+| `dashy_section` | 4 | Add/get/update/delete sections |
+| `dashy_config` | 3 | List config files, get/replace a config file |
+| `dashy_key` | 2 | Get/set a top-level config key |
+
+Example: `dashy_section(operation="dashy_get_section", arguments={"sid": "Media"})`.
+Endpoint-level naming is preserved as the `operation` value:
+
+| Operation | Endpoint |
 |---|---|
 | `dashy_list_config_files` | `GET /api/config` |
 | `dashy_get_config` | `GET /api/config/:file` |
@@ -75,7 +89,7 @@ One tool per Dashy API endpoint:
 | `dashy_delete_item` | `DELETE /api/config/:file/sections/:sid/items/:iid` |
 
 `sid`/`iid` accept either a zero-based index or an exact section name / item title.
-`filename` defaults to `conf.yml` (or `DASHY_CONFIG_FILE`) on every tool.
+`filename` defaults to `conf.yml` (or `DASHY_CONFIG_FILE`) on every operation.
 `PATCH`-based updates are a shallow merge: only given fields change, and a nested
 array included in the patch replaces the existing one wholesale.
 

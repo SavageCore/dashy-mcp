@@ -1,6 +1,13 @@
 """MCP server exposing Dashy's REST API (https://dashy.to/docs/api) as tools.
 
-One tool per API endpoint (see README for the full list). Auth is a bearer
+Full API coverage, exposed as 4 resource-scoped *portmanteau* tools
+(dashy_config, dashy_key, dashy_section, dashy_item) instead of one tool per
+endpoint. Each takes an `operation` enum plus an `arguments` dict; see
+AGENTS.md. `_GROUPS` near the bottom buckets every endpoint function by
+resource and `_register_group` wraps each bucket in one dispatching MCP
+tool; the functions themselves are not tools anymore.
+
+Auth is a bearer
 DASHY_TOKEN sent as `Authorization: Bearer <token>` -- the only auth mode this
 Dashy instance is configured for.
 
@@ -8,16 +15,19 @@ ponytail: no Basic-auth/OIDC support -- this instance has no Dashy `auth:`
 block configured, only API_TOKEN. Add if the instance grows real user auth.
 """
 
+import inspect
 import os
 import sys
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 
 import httpx
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
+from fastmcp.tools import Tool
 from mcp.types import ToolAnnotations
 
+READONLY = ToolAnnotations(readOnlyHint=True)
 DESTRUCTIVE = ToolAnnotations(destructiveHint=True)
 
 # Dashy responses are plain JSON. `dict[str, Any]` (not bare `Any`) matters here:
@@ -34,9 +44,13 @@ _client: httpx.AsyncClient | None = None
 CONFIG_FILE = "conf.yml"
 
 
-def build_client(base_url: str, token: str | None, transport: httpx.BaseTransport | None = None) -> httpx.AsyncClient:
+def build_client(
+    base_url: str, token: str | None, transport: httpx.BaseTransport | None = None
+) -> httpx.AsyncClient:
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    return httpx.AsyncClient(base_url=f"{base_url.rstrip('/')}/api", headers=headers, transport=transport)
+    return httpx.AsyncClient(
+        base_url=f"{base_url.rstrip('/')}/api", headers=headers, transport=transport
+    )
 
 
 async def _req(method: str, path: str, json: Any = None) -> JSONVal:
@@ -59,101 +73,186 @@ def _q(value: str) -> str:
     return quote(value, safe="")
 
 
-@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def dashy_list_config_files() -> JSONObj:
     """List the YAML config files available on the Dashy instance."""
     return await _req("GET", "/config")
 
 
-@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def dashy_get_config(filename: str = "") -> JSONObj:
     """Get a full Dashy config file as JSON. Defaults to conf.yml."""
     return await _req("GET", f"/config/{_f(filename)}")
 
 
-@mcp.tool(annotations=DESTRUCTIVE)
 async def dashy_replace_config(config: dict, filename: str = "") -> JSONObj:
     """Replace an entire Dashy config file. `config` must be a full config object
     (pageInfo, appConfig, sections, pages) -- this is a complete overwrite, not a merge."""
     return await _req("PUT", f"/config/{_f(filename)}", config)
 
 
-@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def dashy_get_key(key: str, filename: str = "") -> JSONVal:
     """Get one top-level config key: pageInfo, appConfig, sections, or pages."""
     return await _req("GET", f"/config/{_f(filename)}/{_q(key)}")
 
 
-@mcp.tool(annotations=DESTRUCTIVE)
 async def dashy_set_key(key: str, value: Any, filename: str = "") -> JSONObj:
     """Replace one top-level config key (pageInfo, appConfig, sections, or pages)
     with `value`. This is a complete replacement of that key, not a merge."""
     return await _req("PUT", f"/config/{_f(filename)}/{_q(key)}", value)
 
 
-@mcp.tool
 async def dashy_add_section(section: dict, filename: str = "") -> JSONObj:
     """Add a new section (a group of tiles) to the dashboard. `section` requires
     a `name`; common keys: name, icon, items, displayData."""
     return await _req("POST", f"/config/{_f(filename)}/sections", section)
 
 
-@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def dashy_get_section(sid: str, filename: str = "") -> JSONObj:
     """Get one section by zero-based index or exact section name."""
     return await _req("GET", f"/config/{_f(filename)}/sections/{_q(sid)}")
 
 
-@mcp.tool
 async def dashy_update_section(sid: str, patch: dict, filename: str = "") -> JSONObj:
     """Shallow-merge `patch` into a section (by index or exact name). Only the
     given fields change; a nested array in `patch` replaces the existing one wholesale."""
     return await _req("PATCH", f"/config/{_f(filename)}/sections/{_q(sid)}", patch)
 
 
-@mcp.tool(annotations=DESTRUCTIVE)
 async def dashy_delete_section(sid: str, filename: str = "") -> JSONObj:
     """Delete a section (by index or exact name), including all its items."""
     return await _req("DELETE", f"/config/{_f(filename)}/sections/{_q(sid)}")
 
 
-@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def dashy_list_items(sid: str, filename: str = "") -> list[Any]:
     """List the items (tiles) in a section, by section index or exact name."""
     return await _req("GET", f"/config/{_f(filename)}/sections/{_q(sid)}/items")
 
 
-@mcp.tool
 async def dashy_add_item(sid: str, item: dict, filename: str = "") -> JSONObj:
     """Add a new item (tile) to a section (by index or exact name). `item` requires
     a `title`; common keys: title, url, icon, description, target."""
     return await _req("POST", f"/config/{_f(filename)}/sections/{_q(sid)}/items", item)
 
 
-@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 async def dashy_get_item(sid: str, iid: str, filename: str = "") -> JSONObj:
     """Get one item (tile) by index or exact title, within a section by index or exact name."""
-    return await _req("GET", f"/config/{_f(filename)}/sections/{_q(sid)}/items/{_q(iid)}")
+    return await _req(
+        "GET", f"/config/{_f(filename)}/sections/{_q(sid)}/items/{_q(iid)}"
+    )
 
 
-@mcp.tool
-async def dashy_update_item(sid: str, iid: str, patch: dict, filename: str = "") -> JSONObj:
+async def dashy_update_item(
+    sid: str, iid: str, patch: dict, filename: str = ""
+) -> JSONObj:
     """Shallow-merge `patch` into an item (by index or exact title), within a section
     (by index or exact name). Only the given fields change."""
-    return await _req("PATCH", f"/config/{_f(filename)}/sections/{_q(sid)}/items/{_q(iid)}", patch)
+    return await _req(
+        "PATCH", f"/config/{_f(filename)}/sections/{_q(sid)}/items/{_q(iid)}", patch
+    )
 
 
-@mcp.tool(annotations=DESTRUCTIVE)
 async def dashy_delete_item(sid: str, iid: str, filename: str = "") -> JSONObj:
     """Delete an item (tile) by index or exact title, within a section by index or exact name."""
-    return await _req("DELETE", f"/config/{_f(filename)}/sections/{_q(sid)}/items/{_q(iid)}")
+    return await _req(
+        "DELETE", f"/config/{_f(filename)}/sections/{_q(sid)}/items/{_q(iid)}"
+    )
+
+
+# Resource groups for portmanteau registration. Every tool function name
+# must appear in exactly one group - see test_all_functions_grouped.
+_GROUPS: dict[str, tuple[str, ...]] = {
+    "dashy_config": (
+        "dashy_get_config",
+        "dashy_list_config_files",
+        "dashy_replace_config",
+    ),
+    "dashy_key": (
+        "dashy_get_key",
+        "dashy_set_key",
+    ),
+    "dashy_section": (
+        "dashy_add_section",
+        "dashy_delete_section",
+        "dashy_get_section",
+        "dashy_update_section",
+    ),
+    "dashy_item": (
+        "dashy_add_item",
+        "dashy_delete_item",
+        "dashy_get_item",
+        "dashy_list_items",
+        "dashy_update_item",
+    ),
+}
+
+
+def _op_line(name: str, fn: Any) -> str:
+    """One line of a group tool's description: signature + one-line doc."""
+    sig = ", ".join(
+        p.name if p.default is inspect.Parameter.empty else f"{p.name}={p.default!r}"
+        for p in inspect.signature(fn).parameters.values()
+    )
+    return f"- {name}({sig}) — {' '.join((fn.__doc__ or '').split())}"
+
+
+def _register_group(
+    group: str, names: tuple[str, ...], ns: dict[str, Any], readonly_names: set[str]
+) -> None:
+    """Register one dispatching tool that fans out to every function named
+    in `names`. The functions themselves are untouched - they're just
+    looked up by name instead of each becoming its own tool."""
+    fns = {n: ns[n] for n in names}
+
+    async def dispatch(
+        operation: str, arguments: JSONObj | None = None
+    ) -> JSONVal | str:
+        fn = fns.get(operation)
+        if fn is None:
+            raise ToolError(
+                f"Unknown operation {operation!r} for {group}. Valid: {', '.join(fns)}"
+            )
+        return await fn(**(arguments or {}))
+
+    dispatch.__annotations__["operation"] = Literal[names]
+    ann = READONLY if set(names) <= readonly_names else None
+    mcp.add_tool(
+        Tool.from_function(
+            dispatch,
+            name=group,
+            description=(
+                f"{group.replace('_', ' ')} operations on Dashy. Pass `operation` and an "
+                f"`arguments` dict matching that operation's parameters.\n\n"
+                + "\n".join(_op_line(n, f) for n, f in fns.items())
+            ),
+            annotations=ann,
+        )
+    )
+
+
+def _register_tools() -> None:
+    ns = globals()
+    readonly_names: set[str] = {
+        "dashy_get_config",
+        "dashy_get_item",
+        "dashy_get_key",
+        "dashy_get_section",
+        "dashy_list_config_files",
+        "dashy_list_items",
+    }
+    for group, names in _GROUPS.items():
+        _register_group(group, names, ns, readonly_names)
+
+
+_register_tools()
 
 
 def main() -> None:
     global _client, CONFIG_FILE
     url = os.environ.get("DASHY_URL")
     if not url:
-        print("DASHY_URL environment variable is required (e.g. https://dashy.example.com)", file=sys.stderr)
+        print(
+            "DASHY_URL environment variable is required (e.g. https://dashy.example.com)",
+            file=sys.stderr,
+        )
         raise SystemExit(1)
     CONFIG_FILE = os.environ.get("DASHY_CONFIG_FILE", "conf.yml")
     _client = build_client(url, os.environ.get("DASHY_TOKEN"))
