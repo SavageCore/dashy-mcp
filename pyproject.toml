@@ -4,7 +4,7 @@ version = "0.2.0"
 description = "MCP server for Dashy's REST API"
 license = "MIT"
 requires-python = ">=3.11"
-dependencies = ["fastmcp>=2.0.0"]
+dependencies = ["fastmcp>=3.4.7"]
 
 [project.scripts]
 dashy-mcp = "dashy_mcp:main"
